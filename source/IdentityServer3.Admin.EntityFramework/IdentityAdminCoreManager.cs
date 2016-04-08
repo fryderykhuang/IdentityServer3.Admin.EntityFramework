@@ -15,6 +15,7 @@
  */
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Data.Entity;
 using System.Data.SqlClient;
 using System.Linq;
@@ -27,8 +28,12 @@ using IdentityAdmin.Core.Scope;
 using IdentityAdmin.Extensions;
 using IdentityServer3.Admin.EntityFramework.Entities;
 using IdentityServer3.Admin.EntityFramework.Interfaces;
+using IdentityServer3.Core.Models;
 using IdentityServer3.EntityFramework;
 using IdentityServer3.EntityFramework.Entities;
+using Client = IdentityServer3.EntityFramework.Entities.Client;
+using Scope = IdentityServer3.EntityFramework.Entities.Scope;
+using ScopeClaim = IdentityServer3.EntityFramework.Entities.ScopeClaim;
 
 namespace IdentityServer3.Admin.EntityFramework
 {
@@ -39,8 +44,8 @@ namespace IdentityServer3.Admin.EntityFramework
         where TScopeKey : IEquatable<TScopeKey>
     {
         private readonly string _connectionString;
-        private readonly EntityFrameworkServiceOptions _entityFrameworkServiceOptions;
-        
+        private readonly EntityFrameworkServiceOptions _entityFrameworkServiceOptions = new EntityFrameworkServiceOptions();
+        private static IMapper _clientMapper;
         public IdentityAdminCoreManager(string connectionString, bool createIfNotExist = false)
         {
             if (createIfNotExist)
@@ -53,29 +58,35 @@ namespace IdentityServer3.Admin.EntityFramework
                 throw new ArgumentException("A connectionstring or name is needed to initialize the IdentityAdmin");
             }
             _connectionString = connectionString;
-            _entityFrameworkServiceOptions = new EntityFrameworkServiceOptions();
-            Mapper.CreateMap<IdentityClient, Client>();
-            Mapper.CreateMap<Client, IdentityClient>();
-            Mapper.CreateMap<ClientClaim, ClientClaimValue>();
-            Mapper.CreateMap<ClientClaimValue, ClientClaim>();
-            Mapper.CreateMap<ClientSecret, ClientSecretValue>();
-            Mapper.CreateMap<ClientSecretValue, ClientSecret>();
-            Mapper.CreateMap<ClientIdPRestriction, ClientIdPRestrictionValue>();
-            Mapper.CreateMap<ClientIdPRestrictionValue, ClientIdPRestriction>();
-            Mapper.CreateMap<ClientPostLogoutRedirectUri, ClientPostLogoutRedirectUriValue>();
-            Mapper.CreateMap<ClientPostLogoutRedirectUriValue, ClientPostLogoutRedirectUri>();
-            Mapper.CreateMap<ClientRedirectUri, ClientRedirectUriValue>();
-            Mapper.CreateMap<ClientRedirectUriValue, ClientRedirectUri>();
-            Mapper.CreateMap<ClientCorsOrigin, ClientCorsOriginValue>();
-            Mapper.CreateMap<ClientCorsOriginValue, ClientCorsOrigin>();
-            Mapper.CreateMap<ClientCustomGrantType, ClientCustomGrantTypeValue>();
-            Mapper.CreateMap<ClientCustomGrantTypeValue, ClientCustomGrantType>();
-            Mapper.CreateMap<ClientScope, ClientScopeValue>();
-            Mapper.CreateMap<ClientScopeValue, ClientScope>();
-            Mapper.CreateMap<ScopeClaim, ScopeClaimValue>();
-            Mapper.CreateMap<ScopeClaimValue, ScopeClaim>();
-            Mapper.CreateMap<IdentityScope, Scope>();
-            Mapper.CreateMap<Scope, IdentityScope>();
+            var clientConfig = new MapperConfiguration(cfg => {
+                cfg.CreateMap<IdentityClient, Client>();
+                cfg.CreateMap<Client, IdentityClient>();
+                cfg.CreateMap<ClientClaim, ClientClaimValue>();
+                cfg.CreateMap<ClientClaimValue, ClientClaim>();
+                cfg.CreateMap<ClientSecret, ClientSecretValue>();
+                cfg.CreateMap<ClientSecretValue, ClientSecret>();
+                cfg.CreateMap<ClientIdPRestriction, ClientIdPRestrictionValue>();
+                cfg.CreateMap<ClientIdPRestrictionValue, ClientIdPRestriction>();
+                cfg.CreateMap<ClientPostLogoutRedirectUri, ClientPostLogoutRedirectUriValue>();
+                cfg.CreateMap<ClientPostLogoutRedirectUriValue, ClientPostLogoutRedirectUri>();
+                cfg.CreateMap<ClientRedirectUri, ClientRedirectUriValue>();
+                cfg.CreateMap<ClientRedirectUriValue, ClientRedirectUri>();
+                cfg.CreateMap<ClientCorsOrigin, ClientCorsOriginValue>();
+                cfg.CreateMap<ClientCorsOriginValue, ClientCorsOrigin>();
+                cfg.CreateMap<ClientCustomGrantType, ClientCustomGrantTypeValue>();
+                cfg.CreateMap<ClientCustomGrantTypeValue, ClientCustomGrantType>();
+                cfg.CreateMap<ClientScope, ClientScopeValue>();
+                cfg.CreateMap<ClientScopeValue, ClientScope>();
+                cfg.CreateMap<ScopeClaim, ScopeClaimValue>();
+                cfg.CreateMap<ScopeClaimValue, ScopeClaim>();
+                cfg.CreateMap<ScopeSecret, ScopeSecretValue>();
+                cfg.CreateMap<ScopeSecretValue, ScopeSecret>();
+                cfg.CreateMap<IdentityScope, Scope>();
+                cfg.CreateMap<Scope, IdentityScope>();
+                cfg.CreateMap<DateTime?, DateTimeOffset?>().ConvertUsing<NullableDateTimeOffsetConverter>();
+                cfg.CreateMap<DateTimeOffset?, DateTime?>().ConvertUsing<NullableOffsetDateTimeConverter>();
+            });
+            _clientMapper = clientConfig.CreateMapper();
         }
         public Task<IdentityAdminMetadata> GetMetadataAsync()
         {
@@ -138,7 +149,7 @@ namespace IdentityServer3.Admin.EntityFramework
                         return new IdentityAdminResult<ScopeDetail>((ScopeDetail)null);
                     }
                     var coreScope = new TScope();
-                    Mapper.Map(efScope, coreScope);
+                    _clientMapper.Map(efScope, coreScope);
                     var result = new ScopeDetail
                     {
                         Subject = subject,
@@ -156,7 +167,9 @@ namespace IdentityServer3.Admin.EntityFramework
 
                     result.Properties = props.ToArray();
                     result.ScopeClaimValues = new List<ScopeClaimValue>();
-                    Mapper.Map(efScope.ScopeClaims.ToList(), result.ScopeClaimValues);
+                    result.ScopeSecretValues = new List<ScopeSecretValue>();
+                    _clientMapper.Map(efScope.ScopeClaims.ToList(), result.ScopeClaimValues);
+                    _clientMapper.Map(efScope.ScopeSecrets.ToList(), result.ScopeSecretValues);
 
                     return new IdentityAdminResult<ScopeDetail>(result);
                 }
@@ -231,7 +244,7 @@ namespace IdentityServer3.Admin.EntityFramework
             {
                 try
                 {
-                    Mapper.Map(scope, efSCope);
+                    _clientMapper.Map(scope, efSCope);
                     db.Scopes.Add(efSCope);
                     db.SaveChanges();
                 }
@@ -260,13 +273,13 @@ namespace IdentityServer3.Admin.EntityFramework
                         }
                         var meta = await GetMetadataAsync();
                         var coreScope = new TScope();
-                        Mapper.Map(efScope, coreScope);
+                        _clientMapper.Map(efScope, coreScope);
                         var propResult = SetScopeProperty(meta.ScopeMetaData.UpdateProperties, coreScope, type, value);
                         if (!propResult.IsSuccess)
                         {
                             return propResult;
                         }
-                        Mapper.Map(coreScope, efScope);
+                        _clientMapper.Map(coreScope, efScope);
 
                         await db.SaveChangesAsync();
 
@@ -309,6 +322,7 @@ namespace IdentityServer3.Admin.EntityFramework
 
             return new IdentityAdminResult("Invalid subject");
         }
+
 
         #region Scope claim
 
@@ -380,7 +394,157 @@ namespace IdentityServer3.Admin.EntityFramework
             return new IdentityAdminResult("Invalid subject or clientId");
         }
 
+        public async Task<IdentityAdminResult> UpdateScopeClaim(string subject, string scopeClaimSubject, string name, string description,
+            bool alwaysIncludeInIdToken)
+        {
+            int parsedSubject, parsedScopeClaimSubject;
+            if (int.TryParse(subject, out parsedSubject) && int.TryParse(scopeClaimSubject, out parsedScopeClaimSubject))
+            {
+                using (var db = new ScopeConfigurationDbContext(_connectionString, _entityFrameworkServiceOptions.Schema))
+                {
+                    try
+                    {
+                        var scope = await db.Scopes.FirstOrDefaultAsync(p => p.Id == parsedSubject);
+                        if (scope == null)
+                        {
+                            return new IdentityAdminResult("Invalid subject");
+                        }
+                        var existingClaim = scope.ScopeClaims.FirstOrDefault(p => p.Id == parsedScopeClaimSubject);
+                        if (existingClaim != null)
+                        {
+                            existingClaim.AlwaysIncludeInIdToken = alwaysIncludeInIdToken;
+                            await db.SaveChangesAsync();
+                        }
+                        return IdentityAdminResult.Success;
+                    }
+                    catch (SqlException ex)
+                    {
+                        return new IdentityAdminResult<CreateResult>(ex.Message);
+                    }
+                }
+            }
+            return new IdentityAdminResult("Invalid subject or claimId");
+        }
+
         #endregion
+
+        #region scope Secret
+
+
+        public async Task<IdentityAdminResult> AddScopeSecretAsync(string subject, string type, string value, string description, DateTime? expiration)
+        {
+            int parsedSubject;
+            if (int.TryParse(subject, out parsedSubject))
+            {
+                using (var db = new ScopeConfigurationDbContext(_connectionString, _entityFrameworkServiceOptions.Schema))
+                {
+                    try
+                    {
+                        var scope = await db.Scopes.FirstOrDefaultAsync(p => p.Id == parsedSubject);
+                        if (scope == null)
+                        {
+                            return new IdentityAdminResult("Invalid subject");
+                        }
+                        var existingSecrets = scope.ScopeSecrets;
+                        if (!existingSecrets.Any(x => x.Type == type && x.Value == value))
+                        {
+                            var scopeSecret = new ScopeSecret
+                            {
+                                Type = type,
+                                Value = value,
+                                Description = description
+
+                            };
+                            if (expiration.HasValue)
+                            {
+                                scopeSecret.Expiration = expiration.Value;
+                            }
+                            scope.ScopeSecrets.Add(scopeSecret);
+                            db.SaveChanges();
+                        }
+                        return IdentityAdminResult.Success;
+                    }
+                    catch (SqlException ex)
+                    {
+                        return new IdentityAdminResult<CreateResult>(ex.Message);
+                    }
+                }
+            }
+            return new IdentityAdminResult("Invalid subject");
+        }
+
+        public async Task<IdentityAdminResult> UpdateScopeSecret(string subject, string scopeSecretSubject, string type, string value, string description,
+            DateTime? expiration)
+        {
+            int parsedSubject, parsedScopeSecretSubject;
+            if (int.TryParse(subject, out parsedSubject) && int.TryParse(scopeSecretSubject, out parsedScopeSecretSubject))
+            {
+                using (var db = new ScopeConfigurationDbContext(_connectionString, _entityFrameworkServiceOptions.Schema))
+                {
+                    try
+                    {
+                        var scope = await db.Scopes.FirstOrDefaultAsync(p => p.Id == parsedSubject);
+                        if (scope == null)
+                        {
+                            return new IdentityAdminResult("Invalid subject");
+                        }
+                        var existingSecret = scope.ScopeSecrets.FirstOrDefault(p => p.Id == parsedScopeSecretSubject);
+                        if (existingSecret != null)
+                        {
+                            existingSecret.Value = value;
+                            existingSecret.Type = type;
+                            existingSecret.Description = description;
+                            if (expiration.HasValue)
+                            {
+                                //Save as new DateTimeOffset(expiration.Value)
+                                existingSecret.Expiration = expiration.Value;
+                            }
+                            await db.SaveChangesAsync();
+                        }
+                        return IdentityAdminResult.Success;
+                    }
+                    catch (SqlException ex)
+                    {
+                        return new IdentityAdminResult<CreateResult>(ex.Message);
+                    }
+                }
+            }
+            return new IdentityAdminResult("Invalid subject or secret id");
+        }
+
+        public async Task<IdentityAdminResult> RemoveScopeSecretAsync(string subject, string id)
+        {
+            int parsedSubject;
+            int parsedSecretId;
+            if (int.TryParse(subject, out parsedSubject) && int.TryParse(id, out parsedSecretId))
+            {
+                using (var db = new ScopeConfigurationDbContext(_connectionString, _entityFrameworkServiceOptions.Schema))
+                {
+                    try
+                    {
+                        var scope = await db.Scopes.FirstOrDefaultAsync(p => p.Id == parsedSubject);
+                        if (scope == null)
+                        {
+                            return new IdentityAdminResult("Invalid subject");
+                        }
+                        var existingSecret = scope.ScopeSecrets.FirstOrDefault(p => p.Id == parsedSecretId);
+                        if (existingSecret != null)
+                        {
+                            scope.ScopeSecrets.Remove(existingSecret);
+                            await db.SaveChangesAsync();
+                        }
+                        return IdentityAdminResult.Success;
+                    }
+                    catch (SqlException ex)
+                    {
+                        return new IdentityAdminResult<CreateResult>(ex.Message);
+                    }
+                }
+            }
+            return new IdentityAdminResult("Invalid subject or secretId");
+        }
+        #endregion
+
         #endregion
 
         #region Client
@@ -397,7 +561,7 @@ namespace IdentityServer3.Admin.EntityFramework
                         return new IdentityAdminResult<ClientDetail>((ClientDetail)null);
                     }
                     var coreClient = new TCLient();
-                    Mapper.Map(eFclient, coreClient);
+                    _clientMapper.Map(eFclient, coreClient);
                     var result = new ClientDetail
                     {
                         Subject = subject,
@@ -417,21 +581,21 @@ namespace IdentityServer3.Admin.EntityFramework
                     result.Properties = props.ToArray();
 
                     result.AllowedCorsOrigins = new List<ClientCorsOriginValue>();
-                    Mapper.Map(eFclient.AllowedCorsOrigins.ToList(), result.AllowedCorsOrigins);
+                    _clientMapper.Map(eFclient.AllowedCorsOrigins.ToList(), result.AllowedCorsOrigins);
                     result.AllowedCustomGrantTypes = new List<ClientCustomGrantTypeValue>();
-                    Mapper.Map(eFclient.AllowedCustomGrantTypes.ToList(), result.AllowedCustomGrantTypes);
+                    _clientMapper.Map(eFclient.AllowedCustomGrantTypes.ToList(), result.AllowedCustomGrantTypes);
                     result.AllowedScopes = new List<ClientScopeValue>();
-                    Mapper.Map(eFclient.AllowedScopes.ToList(), result.AllowedScopes);
+                    _clientMapper.Map(eFclient.AllowedScopes.ToList(), result.AllowedScopes);
                     result.Claims = new List<ClientClaimValue>();
-                    Mapper.Map(eFclient.Claims.ToList(), result.Claims);
+                    _clientMapper.Map(eFclient.Claims.ToList(), result.Claims);
                     result.ClientSecrets = new List<ClientSecretValue>();
-                    Mapper.Map(eFclient.ClientSecrets.ToList(), result.ClientSecrets);
+                    _clientMapper.Map(eFclient.ClientSecrets.ToList(), result.ClientSecrets);
                     result.IdentityProviderRestrictions = new List<ClientIdPRestrictionValue>();
-                    Mapper.Map(eFclient.IdentityProviderRestrictions.ToList(), result.IdentityProviderRestrictions);
+                    _clientMapper.Map(eFclient.IdentityProviderRestrictions.ToList(), result.IdentityProviderRestrictions);
                     result.PostLogoutRedirectUris = new List<ClientPostLogoutRedirectUriValue>();
-                    Mapper.Map(eFclient.PostLogoutRedirectUris.ToList(), result.PostLogoutRedirectUris);
+                    _clientMapper.Map(eFclient.PostLogoutRedirectUris.ToList(), result.PostLogoutRedirectUris);
                     result.RedirectUris = new List<ClientRedirectUriValue>();
-                    Mapper.Map(eFclient.RedirectUris.ToList(), result.RedirectUris);
+                    _clientMapper.Map(eFclient.RedirectUris.ToList(), result.RedirectUris);
 
                     return new IdentityAdminResult<ClientDetail>(result);
                 }
@@ -512,7 +676,20 @@ namespace IdentityServer3.Admin.EntityFramework
             {
                 try
                 {
-                    Mapper.Map(client, efClient);
+                    _clientMapper.Map(client, efClient);
+                    efClient.Enabled = true;
+                    efClient.EnableLocalLogin = true;
+                    efClient.RequireConsent = true;
+                    efClient.Flow = Flows.Implicit;
+                    efClient.AllowClientCredentialsOnly = false;
+                    efClient.IdentityTokenLifetime = 300;
+                    efClient.AccessTokenLifetime = 3600;
+                    efClient.AuthorizationCodeLifetime = 300;
+                    efClient.AbsoluteRefreshTokenLifetime = 300;
+                    efClient.SlidingRefreshTokenLifetime = 1296000;
+                    efClient.AccessTokenType = AccessTokenType.Jwt;
+                    efClient.AlwaysSendClientClaims = false;
+                    efClient.PrefixClientClaims = true;
                     db.Clients.Add(efClient);
                     db.SaveChanges();
                 }
@@ -541,13 +718,13 @@ namespace IdentityServer3.Admin.EntityFramework
                         }
                         var meta = await GetMetadataAsync();
                         var coreClient = new TCLient();
-                        Mapper.Map(eFclient, coreClient);
+                        _clientMapper.Map(eFclient, coreClient);
                         var propResult = SetClientProperty(meta.ClientMetaData.UpdateProperties, coreClient, type, value);
                         if (!propResult.IsSuccess)
                         {
                             return propResult;
                         }
-                        Mapper.Map(coreClient, eFclient);
+                        _clientMapper.Map(coreClient, eFclient);
 
                         await db.SaveChangesAsync();
 
@@ -1199,6 +1376,46 @@ namespace IdentityServer3.Admin.EntityFramework
             throw new Exception("Invalid property type " + propMetadata.Type);
         }
 
+
         #endregion
     }
+   
+    public class NullableOffsetDateTimeConverter : TypeConverter<System.DateTimeOffset?, System.DateTime?>
+    {
+        /// <summary>
+        /// Converts data from DateTime to DateTimeOffset
+        /// </summary>
+        /// <param name="source"></param>
+        /// <returns></returns>
+        protected override System.DateTime? ConvertCore(System.DateTimeOffset? source)
+        {
+            if (source.HasValue)
+                if (source.Value.Offset.Equals(TimeSpan.Zero))
+                    return source.Value.UtcDateTime;
+                else if (source.Value.Offset.Equals(TimeZoneInfo.Local.GetUtcOffset(source.Value.DateTime)))
+                    return DateTime.SpecifyKind(source.Value.DateTime, DateTimeKind.Local);
+                else
+                    return source.Value.DateTime;
+            else
+                return null;
+        }
+    }
+
+    public class NullableDateTimeOffsetConverter : TypeConverter<System.DateTime?, System.DateTimeOffset?>
+    {
+        /// <summary>
+        /// Converts data from DateTime to DateTimeOffset
+        /// </summary>
+        /// <param name="source"></param>
+        /// <returns></returns>
+        protected override System.DateTimeOffset? ConvertCore(System.DateTime? source)
+        {
+            if (source.HasValue)
+                return source.Value;
+            else
+                return null;
+        }
+    }
+
+
 }

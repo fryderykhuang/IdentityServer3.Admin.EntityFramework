@@ -1,8 +1,11 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using AutoMapper;
 using IdentityServer3.Admin.EntityFramework.Entities;
 using IdentityServer3.Admin.EntityFramework.Extensions;
+using IdentityServer3.EntityFramework.Entities;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using EntitiesMap = IdentityServer3.Admin.EntityFramework.Extensions.EntitiesMap;
 
 namespace Core.EntityFramework.IntegrationTests
 {
@@ -27,9 +30,10 @@ namespace Core.EntityFramework.IntegrationTests
                 ScopeClaims = new HashSet<IdentityServer3.EntityFramework.Entities.ScopeClaim>(),
                 ScopeSecrets = new HashSet<IdentityServer3.EntityFramework.Entities.ScopeSecret>(),
             };
+
             var m = s2.ToModel();
 
-            Mapper.AssertConfigurationIsValid();
+            EntitiesMap.Config.AssertConfigurationIsValid();
         }
     }
 }
