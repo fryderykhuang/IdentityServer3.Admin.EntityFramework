@@ -1,0 +1,22 @@
+{
+  "version": "1.0.0-*",
+  "frameworks": {
+    "net45": {
+      "wrappedProject": "../../IdentityServer3.Admin.EntityFramework/IdentityAdmin.EntityFramework.csproj",
+      "bin": {
+        "assembly": "../../IdentityServer3.Admin.EntityFramework/obj/{configuration}/IdentityServer3.Admin.EntityFramework.dll",
+        "pdb": "../../IdentityServer3.Admin.EntityFramework/obj/{configuration}/IdentityServer3.Admin.EntityFramework.pdb"
+      },
+      "dependencies": {
+        "AutoMapper": "4.2.1",
+        "EntityFramework": "6.1.3",
+        "Newtonsoft.Json": "8.0.3",
+        "Owin": "1.0",
+        "IdentityAdmin": "1.0.0-*",
+        "IdentityServer3.EntityFramework": "1.0.0-*",
+        "IdentityServer3": "1.0.0-*",
+        "EntityFramework.SqlServer": "1.0.0-*"
+      }
+    }
+  }
+}
